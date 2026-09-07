@@ -1,0 +1,266 @@
+//> using scala 2.13
+
+// ============================================================================
+//  Order event pipeline — a review of modules 1-5
+//
+//  Run with:  scala-cli run OrderPipeline.scala
+//  Every task is marked TODO. Replace ??? with real code.
+//  The main method at the bottom checks your work and prints ✓ or ✗.
+//
+//  ??? is a real Scala expression that compiles anywhere and throws if run.
+//  That is why this file compiles before you have written anything.
+// ============================================================================
+
+object OrderPipeline {
+
+  // ──────────────────────────────────────────────────────────────────────────
+  //  The raw feed. Pretend this came off a queue.
+  //  Format: TYPE|field|field|...   Some lines are malformed on purpose.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  val rawFeed: List[String] = List(
+    "PLACED|o-1001|alice|2500",
+    "SHIPPED|o-1001|ups",
+    "PLACED|o-1002|bob|13750",
+    "CANCELLED|o-1002|out of stock",
+    "PLACED|o-1003|alice|899",
+    "HEARTBEAT",
+    "SHIPPED|o-1003|fedex",
+    "PLACED|o-1004|carol|45000",
+    "SHIPPED|o-1004|ups",
+    "PLACED|o-1005|bob|9900",
+    "CANCELLED|o-1005|customer changed mind",
+    "PLACED|o-1006|alice|not-a-number",   // bad amount — must be dropped
+    "this line is garbage",               // unparseable — must be dropped
+    "SHIPPED|o-9999|dhl"                  // shipped but never placed
+  )
+
+  // ──────────────────────────────────────────────────────────────────────────
+  //  TASK 1 — A value class with a smart constructor.   (modules 1, 2)
+  //
+  //  Give Cents a private constructor so nobody can build a negative amount,
+  //  and a companion object whose apply validates. Add a `plus` method and a
+  //  `format` method that renders 2500 as "$25.00".
+  //
+  //  Hints:
+  //    class Cents private (val raw: Int)      <- private ctor
+  //    object Cents { def apply(...): Cents }  <- companion, calls `new`
+  //    Use Option: return None for a negative input, Some(...) otherwise.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  class Cents private (val raw: Int) {
+    def plus(other: Cents): Cents = ???           // TODO
+    def format: String = ???                      // TODO  e.g. 2500 -> "$25.00"
+    override def toString: String = format
+  }
+
+  object Cents {
+    val zero: Cents = new Cents(0)
+    def apply(raw: Int): Option[Cents] = ???      // TODO  None if raw < 0
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  //  TASK 2 — The event ADT.   (module 2)
+  //
+  //  Define a sealed trait Event with these alternatives:
+  //    Placed(orderId: String, customer: String, amount: Cents)
+  //    Shipped(orderId: String, carrier: String)
+  //    Cancelled(orderId: String, reason: String)
+  //    Heartbeat                                  <- no fields
+  //
+  //  Then uncomment the `orderId` member on the trait and make every
+  //  alternative except Heartbeat satisfy it. (Heartbeat has no order, so
+  //  think about whether it belongs under the same trait at all — see the
+  //  STRETCH note at the bottom of the file.)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  sealed trait Event
+  // TODO: define Placed, Shipped, Cancelled, Heartbeat
+
+  // ──────────────────────────────────────────────────────────────────────────
+  //  TASK 3 — A custom extractor.   (module 4)
+  //
+  //  IntOf lets you pattern-match a String as an Int:
+  //      "2500" match { case IntOf(n) => n }   // 2500
+  //      "abc"  match { case IntOf(n) => n }   // doesn't match
+  //
+  //  unapply returns Some(value) to match, None to not match.
+  //  Hint: s.toIntOption exists in Scala 2.13.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  object IntOf {
+    def unapply(s: String): Option[Int] = ???     // TODO
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  //  TASK 4 — The parser.   (modules 3, 4)
+  //
+  //  Split each line on "|" and pattern-match the resulting Array.
+  //  Return Some(event) on success, None on anything malformed.
+  //
+  //  Array patterns work like case class patterns:
+  //      line.split('|') match {
+  //        case Array("HEARTBEAT")               => ...
+  //        case Array("SHIPPED", id, carrier)    => ...
+  //        case Array("PLACED", id, who, IntOf(n)) => ...   // nested extractor!
+  //        case _                                => None
+  //      }
+  //
+  //  Note that split('|') takes a Char, but split("|") takes a regex where
+  //  | is special. Use the Char version, or escape it.
+  //
+  //  For PLACED you must also handle Cents(n) returning None (negative amount).
+  //  A for-comprehension over Option is the clean way to do that:
+  //      for { c <- Cents(n) } yield Placed(id, who, c)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  def parse(line: String): Option[Event] = ???    // TODO
+
+  // ──────────────────────────────────────────────────────────────────────────
+  //  TASK 5 — Parse the whole feed.   (module 5)
+  //
+  //  flatMap over the raw feed with `parse`. Because parse returns an Option,
+  //  flatMap drops the Nones for you — this is the collection flatMap you
+  //  already know, and it is a preview of why Option matters in module 6.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  lazy val events: List[Event] = ???              // TODO
+
+  // ──────────────────────────────────────────────────────────────────────────
+  //  TASK 6 — Filtering by case.   (modules 4, 5)
+  //
+  //  Use `collect` to pull out just the events of each kind.
+  //  Reminder: xs.collect { case Foo(a, b) => ... } keeps only matches.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  lazy val placed:    List[Placed]    = ???       // TODO
+  lazy val shipped:   List[Shipped]   = ???       // TODO
+  lazy val cancelled: List[Cancelled] = ???       // TODO
+
+  // ──────────────────────────────────────────────────────────────────────────
+  //  TASK 7 — Aggregations.   (module 5)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // Total of every placed order. Use foldLeft with Cents.zero and .plus
+  lazy val totalPlaced: Cents = ???               // TODO
+
+  // Map from customer name to their total. Hint: groupBy, then map over the
+  // resulting Map — remember iterating a Map gives you (key, value) pairs.
+  lazy val revenueByCustomer: Map[String, Cents] = ???   // TODO
+
+  // Customers sorted by spend, highest first, as (name, cents) pairs.
+  lazy val leaderboard: List[(String, Int)] = ???        // TODO
+
+  // Every cancellation reason, in feed order.
+  lazy val cancellationReasons: List[String] = ???       // TODO
+
+  // ──────────────────────────────────────────────────────────────────────────
+  //  TASK 8 — A join, using a for-comprehension.   (module 5)
+  //
+  //  A "fulfilled" order is one that was Placed AND later Shipped.
+  //  Produce (orderId, customer, amountRaw, carrier) for each.
+  //
+  //  Write it as a for-comprehension over two lists with a guard:
+  //      for {
+  //        p <- placed
+  //        s <- shipped
+  //        if <same order>
+  //      } yield ...
+  //
+  //  That is a nested loop, and it desugars to flatMap + withFilter + map.
+  //  Once it works, try rewriting it with a Map lookup instead and notice
+  //  the difference in shape.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  lazy val fulfilled: List[(String, String, Int, String)] = ???   // TODO
+
+  // Shipments for orders that were never placed. Hint: build a Set of placed
+  // ids first, then filterNot.
+  lazy val orphanShipments: List[String] = ???    // TODO
+
+  // ──────────────────────────────────────────────────────────────────────────
+  //  TASK 9 — A trait as an interface.   (module 2)
+  //
+  //  Define:
+  //    trait Sink { def write(line: String): Unit }
+  //  Then two implementations:
+  //    ConsoleSink   — prints
+  //    MemorySink    — accumulates into a mutable.ArrayBuffer, exposes .lines
+  //
+  //  Then write `report(sink: Sink): Unit` that writes a few summary lines.
+  //  This is the pattern your backend uses for swapping a real dependency
+  //  for a test double.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  // TODO: trait Sink, ConsoleSink, MemorySink
+
+  def report(sink: Any): Unit = ???               // TODO: change Any to Sink
+
+  // ==========================================================================
+  //  Check harness — do not edit
+  // ==========================================================================
+
+  private var passed = 0
+  private var failed = 0
+
+  private def check[A](label: String, actual: => A, expected: A): Unit = {
+    val result =
+      try if (actual == expected) Right(()) else Left(actual.toString)
+      catch { case e: Throwable => Left(s"threw ${e.getClass.getSimpleName}") }
+
+    result match {
+      case Right(_) => passed += 1; println(s"  ok   $label")
+      case Left(got) =>
+        failed += 1
+        println(s"  FAIL $label")
+        println(s"         expected: $expected")
+        println(s"         got:      $got")
+    }
+  }
+
+  def main(args: Array[String]): Unit = {
+    println("\nRunning checks...\n")
+
+    check("Cents formats",        Cents(2500).map(_.format),   Some("$25.00"))
+    check("Cents rejects negative", Cents(-1),                 None)
+    check("IntOf matches",        IntOf.unapply("42"),         Some(42))
+    check("IntOf rejects",        IntOf.unapply("4x2"),        None)
+    check("parsed event count",   events.size,                 12)
+    check("placed count",         placed.size,                 5)
+    check("shipped count",        shipped.size,                4)
+    check("cancelled count",      cancelled.size,              2)
+    check("total placed",         totalPlaced.raw,             72049)
+    check("alice total",          revenueByCustomer.get("alice").map(_.raw), Some(3399))
+    check("leaderboard",          leaderboard,
+      List("carol" -> 45000, "bob" -> 23650, "alice" -> 3399))
+    check("cancellation reasons", cancellationReasons,
+      List("out of stock", "customer changed mind"))
+    check("fulfilled count",      fulfilled.size,              3)
+    check("fulfilled revenue",    fulfilled.map(_._3).sum,     48399)
+    check("orphan shipments",     orphanShipments,             List("o-9999"))
+
+    println(s"\n$passed passed, $failed failed\n")
+  }
+}
+
+// ============================================================================
+//  STRETCH GOALS, if you still have time
+//
+//  A) Heartbeat has no orderId, so putting `def orderId: String` on Event
+//     forces an awkward answer. Restructure: make a sub-trait
+//     `sealed trait OrderEvent extends Event { def orderId: String }`
+//     and have Placed/Shipped/Cancelled extend that instead. Notice how the
+//     compiler's exhaustiveness checking still works across both levels.
+//
+//  B) Delete one case from any `match` on Event and compile. Read the
+//     exhaustiveness warning. Then add `case _ =>` and watch it disappear —
+//     that is the cost of a wildcard on a sealed type.
+//
+//  C) Rewrite `fulfilled` using a Map from orderId to carrier instead of the
+//     nested for-comprehension. Which one reads better? Which is O(n*m)?
+//
+//  D) Write `parse` a second time using a regex extractor instead of split:
+//         val Line = """(\w+)\|([\w-]+)\|(.+)""".r
+//         line match { case Line(kind, id, rest) => ... }
+//     Regexes in Scala are extractors, which is why this works.
+// ============================================================================
