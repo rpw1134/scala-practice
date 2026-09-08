@@ -1,0 +1,18 @@
+# Build Server Protocol / Metals
+.bsp/
+.metals/
+.bloop/
+
+# scala-cli build output
+.scala-build/
+
+# Compiled output
+*.class
+target/
+
+# Editor
+.vscode/
+.idea/
+
+# macOS
+.DS_Store

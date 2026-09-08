@@ -1,0 +1,407 @@
+//> using scala 2.13
+
+// ============================================================================
+//  Checkout service — a review of modules 6, 7, and 8
+//
+//  Run with:  scala-cli run CheckoutService.scala
+//  Or watch:  scala-cli run --watch CheckoutService.scala
+//
+//  Replace every ??? with real code. main() checks your work.
+//  Tasks are ordered by dependency — do them top to bottom.
+// ============================================================================
+
+import scala.concurrent.{Await, Future}
+import scala.concurrent.duration._
+import scala.util.{Try, Success, Failure}
+
+object CheckoutService {
+
+  // ──────────────────────────────────────────────────────────────────────────
+  //  Fixture data. Pretend these are database tables.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  case class Customer(id: String, name: String, email: Option[String], vip: Boolean)
+
+  val customers: Map[String, Customer] = Map(
+    "alice" -> Customer("alice", "Alice", Some("alice@example.com"), vip = false),
+    "bob"   -> Customer("bob",   "Bob",   None,                     vip = true)
+  )
+
+  val prices: Map[String, Int] = Map(          // sku -> unit price in cents
+    "widget"    -> 2500,
+    "gizmo"     -> 13750,
+    "doohickey" -> 899
+  )
+
+  val inventory: Map[String, Int] = Map(       // sku -> units in stock
+    "widget"    -> 10,
+    "gizmo"     -> 2,
+    "doohickey" -> 0
+  )
+
+  case class CheckoutRequest(customerId: String, sku: String, qtyRaw: String)
+
+  val requests: List[CheckoutRequest] = List(
+    CheckoutRequest("alice", "widget",    "2"),    // ok
+    CheckoutRequest("alice", "gizmo",     "5"),    // only 2 in stock
+    CheckoutRequest("carol", "widget",    "1"),    // no such customer
+    CheckoutRequest("bob",   "sprocket",  "1"),    // no such sku
+    CheckoutRequest("bob",   "widget",    "abc"),  // qty not a number
+    CheckoutRequest("bob",   "doohickey", "1"),    // 0 in stock
+    CheckoutRequest("bob",   "gizmo",     "2")     // ok
+  )
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  TASK 1 — An extension method.   (module 7, mechanism 3)
+  //
+  //  Warmup, and everything below formats money with it.
+  //
+  //  Int has no `.cents` method. Add one:
+  //      2500.cents   ==  "$25.00"
+  //      899.cents    ==  "$8.99"
+  //      0.cents      ==  "$0.00"
+  //
+  //  Use `implicit class`. After it compiles, look at the call site and note
+  //  that nothing marks it as unusual — that's exactly why the reading rule
+  //  is "impossible method call means extension method, go find the import."
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // TODO: implicit class IntOps(n: Int) { def cents: String = ??? }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  TASK 2 — An error ADT.   (modules 2, 6)
+  //
+  //  Real code rarely uses Either[String, A]. It uses a sealed trait so the
+  //  caller can match on the error and choose a status code.
+  //
+  //  Define:
+  //    sealed trait CheckoutError
+  //      UnknownCustomer(id: String)
+  //      UnknownSku(sku: String)
+  //      BadQuantity(raw: String)
+  //      InsufficientStock(sku: String, wanted: Int, available: Int)
+  //
+  //  Then define a type alias so you stop writing the error type everywhere:
+  //    type Result[A] = Either[CheckoutError, A]
+  // ══════════════════════════════════════════════════════════════════════════
+
+  sealed trait CheckoutError
+  // TODO: the four cases
+
+  // TODO: type Result[A] = ???
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  TASK 3 — Four small validators, each returning Either.   (module 6)
+  //
+  //  Each looks something up and either succeeds or reports why it failed.
+  //  Useful: Option#toRight turns an Option into an Either.
+  //      customers.get(id)                  // Option[Customer]
+  //      customers.get(id).toRight(err)     // Either[CheckoutError, Customer]
+  //
+  //  For checkStock: succeed with the requested qty if enough is available,
+  //  otherwise InsufficientStock with the wanted and available numbers.
+  //  A missing sku in `inventory` counts as 0 available.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  def findCustomer(id: String): Result[Customer] = ???        // TODO
+  def findPrice(sku: String): Result[Int] = ???               // TODO
+  def parseQty(raw: String): Result[Int] = ???                // TODO
+  def checkStock(sku: String, qty: Int): Result[Int] = ???    // TODO
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  TASK 4 — Compose them with a for-comprehension.   (module 6)
+  //
+  //  Chain the four validators. The first Left short-circuits and the rest
+  //  never run. Inside the block you work with plain values; the Either
+  //  wrapper comes back at the yield.
+  //
+  //  Validate in this order: customer, price, qty, stock.
+  //  (Each request is broken in exactly one way, so order won't change the
+  //  expected results — but notice that it would if two things were wrong.)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  case class ValidOrder(customer: Customer, sku: String, qty: Int, totalCents: Int)
+
+  def validate(req: CheckoutRequest): Result[ValidOrder] = ???   // TODO
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  TASK 5 — Split successes from failures.   (modules 5, 6)
+  //
+  //  Validate every request, then separate the results.
+  //
+  //  Do it twice, two different ways:
+  //    a) `validated.partitionMap(identity)` — 2.13 has this built in and it
+  //       returns a (List[Left values], List[Right values]) tuple.
+  //    b) two `collect` calls with `case Left(e) =>` and `case Right(v) =>`
+  //  Keep whichever you find more readable; the checks only look at the result.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  lazy val validated: List[Result[ValidOrder]] = ???   // TODO: requests.map(...)
+
+  lazy val failures: List[CheckoutError] = ???         // TODO
+  lazy val successes: List[ValidOrder]   = ???         // TODO
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  TASK 6 — Option chaining.   (module 6)
+  //
+  //  Not every customer has an email. Return the domain part of a customer's
+  //  email, or None if the customer doesn't exist, has no email, or the email
+  //  has no "@".
+  //
+  //  Write it as a for-comprehension over Option. Three steps, each of which
+  //  can be None. Note that this is the same shape as TASK 4 — different
+  //  wrapper, identical structure.
+  //
+  //  Then rewrite it as a chain of .flatMap calls and confirm you get the same
+  //  thing. That desugaring is the whole trick.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  def emailDomain(customerId: String): Option[String] = ???    // TODO
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  TASK 7 — Try at a boundary.   (module 6)
+  //
+  //  legacyParse simulates a Java library that throws. Don't change it.
+  //  Write safeParse to convert the throwing call into a value.
+  //
+  //  Then write describeFailure to render the outcome:
+  //    Success(n) => s"parsed $n"
+  //    Failure(e) => s"failed: ${e.getMessage}"
+  //  Use a match, then try rewriting with .fold and see which you prefer.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  def legacyParse(s: String): Int =
+    if (s.forall(_.isDigit) && s.nonEmpty) s.toInt
+    else throw new IllegalArgumentException(s"bad input: $s")
+
+  def safeParse(s: String): Try[Int] = ???              // TODO
+  def describeFailure(t: Try[Int]): String = ???        // TODO
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  TASK 8 — Implicit parameter propagation.   (module 7, mechanism 1)
+  //
+  //  Timestamps make code untestable if you call System.currentTimeMillis
+  //  directly. So: a Clock trait, passed implicitly, swapped for a fixed one
+  //  in tests. This is mechanism 1 doing what it's actually for.
+  //
+  //  a) Give Clock a companion object holding an implicit SystemClock.
+  //  b) Write `stamp` taking an implicit Clock.
+  //  c) Write `receiptFor` — it does NOT use the clock directly, but it calls
+  //     something that does. Make it compile. That's the propagation from the
+  //     module: you must accept the implicit to have anything to pass on.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  trait Clock { def nowMillis: Long }
+
+  class FixedClock(val nowMillis: Long) extends Clock       // for tests
+
+  object Clock {
+    // TODO: implicit val system: Clock = new Clock { def nowMillis = ... }
+  }
+
+  def stamp(msg: String): String = ???     // TODO: add (implicit c: Clock)
+                                           //       return s"[${c.nowMillis}] $msg"
+
+  case class Receipt(sku: String, qty: Int, totalCents: Int, line: String)
+
+  def receiptFor(o: ValidOrder): Receipt = ???   // TODO: add the implicit list.
+                                                 // line should be
+                                                 //   stamp(s"${o.sku} x${o.qty}")
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  TASK 9 — A type class.   (module 7, mechanism 2)
+  //
+  //  You want one `render` function that works for CheckoutError, ValidOrder,
+  //  and Receipt — three unrelated types. Inheritance can't do it for types
+  //  you don't own, and here it would also be the wrong shape.
+  //
+  //  a) Define  trait Describe[A] { def describe(a: A): String }
+  //  b) Put implicit instances in `object Describe` so no import is needed.
+  //  c) Write `render` with a context bound: def render[A: Describe](a: A)
+  //     and use implicitly[Describe[A]] to reach the instance.
+  //
+  //  Expected strings (dollar formatting comes from TASK 1):
+  //    UnknownCustomer("carol")             -> "unknown customer: carol"
+  //    UnknownSku("sprocket")               -> "unknown sku: sprocket"
+  //    BadQuantity("abc")                   -> "bad quantity: abc"
+  //    InsufficientStock("gizmo", 5, 2)     -> "gizmo: wanted 5, have 2"
+  //    ValidOrder(bob, "gizmo", 2, 27500)   -> "Bob: 2 x gizmo = $275.00"
+  //    Receipt("widget", 2, 5000, line)     -> "receipt: 2 x widget = $50.00"
+  // ══════════════════════════════════════════════════════════════════════════
+
+  trait Describe[A] {
+    def describe(a: A): String
+  }
+
+  object Describe {
+    // TODO: implicit instances for CheckoutError, ValidOrder, Receipt
+  }
+
+  def render[A](a: A): String = ???   // TODO: make it def render[A: Describe]
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  TASK 10 — Futures, sequential and parallel.   (module 6)
+  //
+  //  These fake services each sleep 300ms. Don't change them.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  import scala.concurrent.ExecutionContext.Implicits.global
+
+  def reserveStock(sku: String, qty: Int): Future[String] = Future {
+    Thread.sleep(300); s"res-$sku-$qty"
+  }
+
+  def chargeCard(customerId: String, cents: Int): Future[String] = Future {
+    Thread.sleep(300); s"chg-$customerId-$cents"
+  }
+
+  def loadTaxRate(sku: String): Future[Int] = Future {
+    Thread.sleep(300); 8
+  }
+
+  //  a) SEQUENTIAL: charging depends on having reserved first. Write a
+  //     for-comprehension over Futures that reserves, then charges, then
+  //     yields s"$reservationId|$chargeId". ~600ms, and it has to be.
+  def checkoutSequential(o: ValidOrder): Future[String] = ???   // TODO
+
+  //  b) PARALLEL: reserving and loading the tax rate are independent.
+  //     Write this so both are in flight at once (~300ms, not ~600ms).
+  //     Remember: a Future starts when the expression is evaluated, so where
+  //     you write the calls decides whether they overlap.
+  //     Yield s"$reservationId|$rate".
+  def checkoutParallel(o: ValidOrder): Future[String] = ???     // TODO
+
+  //  c) FAN OUT: reserve stock for every successful order at once, and get
+  //     back one Future of all the reservation ids. One method call does it.
+  def reserveAll(orders: List[ValidOrder]): Future[List[String]] = ???  // TODO
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  TASK 11 — Generics with a type parameter.   (module 8)
+  //
+  //  Write a generic helper that takes any list of Results and returns the
+  //  first success, or None if they all failed. Works for Result[ValidOrder],
+  //  Result[Int], Result[anything].
+  //
+  //  Then answer, in a comment: why does firstSuccess need [A] at all, rather
+  //  than just taking List[Result[Any]]?
+  // ══════════════════════════════════════════════════════════════════════════
+
+  def firstSuccess[A](rs: List[Result[A]]): Option[A] = ???   // TODO
+
+  // ==========================================================================
+  //  Check harness — do not edit
+  // ==========================================================================
+
+  private var passed = 0
+  private var failed = 0
+
+  private def check[A](label: String, actual: => A, expected: A): Unit = {
+    val outcome =
+      try if (actual == expected) Right(()) else Left(actual.toString)
+      catch { case e: Throwable => Left(s"threw ${e.getClass.getSimpleName}: ${e.getMessage}") }
+
+    outcome match {
+      case Right(_) => passed += 1; println(s"  ok   $label")
+      case Left(got) =>
+        failed += 1
+        println(s"  FAIL $label")
+        println(s"         expected: $expected")
+        println(s"         got:      $got")
+    }
+  }
+
+  private def timed[A](f: => Future[A]): (A, Long) = {
+    val t0 = System.currentTimeMillis()
+    val r = Await.result(f, 10.seconds)
+    (r, System.currentTimeMillis() - t0)
+  }
+
+  def main(args: Array[String]): Unit = {
+    println("\nRunning checks...\n")
+
+    // Task 1
+    check("2500.cents", 2500.cents, "$25.00")
+    check("899.cents",  899.cents,  "$8.99")
+    check("0.cents",    0.cents,    "$0.00")
+
+    // Tasks 3-5
+    check("validate ok",      validate(requests.head).map(_.totalCents), Right(5000))
+    check("success count",    successes.size,  2)
+    check("failure count",    failures.size,   5)
+    check("total revenue",    successes.map(_.totalCents).sum, 32500)
+    check("first failure",    render(failures.head), "gizmo: wanted 5, have 2")
+    check("all failures",     failures.map(render), List(
+      "gizmo: wanted 5, have 2",
+      "unknown customer: carol",
+      "unknown sku: sprocket",
+      "bad quantity: abc",
+      "doohickey: wanted 1, have 0"
+    ))
+
+    // Task 6
+    check("alice domain",  emailDomain("alice"), Some("example.com"))
+    check("bob no email",  emailDomain("bob"),   None)
+    check("no customer",   emailDomain("carol"), None)
+
+    // Task 7
+    check("safeParse ok",   safeParse("42").toOption,        Some(42))
+    check("safeParse bad",  safeParse("4x").isFailure,       true)
+    check("describe ok",    describeFailure(safeParse("42")), "parsed 42")
+    check("describe bad",   describeFailure(safeParse("4x")), "failed: bad input: 4x")
+
+    // Task 8 — a fixed clock, passed explicitly, overrides the implicit one
+    implicit val testClock: Clock = new FixedClock(1000L)
+    check("stamp",    stamp("hello"), "[1000] hello")
+    check("receipt",  receiptFor(successes.head).line, "[1000] widget x2")
+
+    // Task 9
+    check("render order",   render(successes(1)), "Bob: 2 x gizmo = $275.00")
+    check("render receipt", render(receiptFor(successes.head)),
+                            "receipt: 2 x widget = $50.00")
+
+    // Task 10
+    val (seqResult, seqMs) = timed(checkoutSequential(successes.head))
+    check("sequential value", seqResult, "res-widget-2|chg-alice-5000")
+    check("sequential is ~600ms", seqMs >= 550, true)
+
+    val (parResult, parMs) = timed(checkoutParallel(successes.head))
+    check("parallel value", parResult, "res-widget-2|8")
+    check("parallel is ~300ms", parMs < 500, true)
+
+    val (allResult, allMs) = timed(reserveAll(successes))
+    check("reserveAll value", allResult, List("res-widget-2", "res-gizmo-2"))
+    check("reserveAll is concurrent", allMs < 500, true)
+
+    // Task 11
+    check("firstSuccess",       firstSuccess(validated).map(_.sku), Some("widget"))
+    check("firstSuccess empty", firstSuccess(failures.map(Left(_))), None)
+
+    println(s"\n$passed passed, $failed failed\n")
+  }
+}
+
+// ============================================================================
+//  STRETCH GOALS
+//
+//  A) Delete `import scala.concurrent.ExecutionContext.Implicits.global` and
+//     read the errors. Then fix it the production way instead: add
+//     (implicit ec: ExecutionContext) to the methods that need it and watch
+//     how far up the call chain it has to travel.
+//
+//  B) Add a second implicit Clock in scope alongside the one in the companion
+//     object. Read the ambiguity error. Then remove it and note that an
+//     explicit argument always wins over implicit search.
+//
+//  C) Write render for a type with no Describe instance — render(42) — and
+//     read that error carefully. "could not find implicit value for evidence
+//     parameter" is the message you'll hit most often in real Scala.
+//
+//  D) Change checkoutParallel to use Future.zip instead of a for-comprehension
+//     with pre-created futures. Which communicates the intent better?
+//
+//  E) validate short-circuits on the first error. Real APIs often want ALL
+//     the errors at once. Write validateAll returning
+//     Either[List[CheckoutError], ValidOrder] that accumulates instead.
+//     Notice you cannot do this with a for-comprehension — that's precisely
+//     what Cats' Validated type exists for.
+// ============================================================================

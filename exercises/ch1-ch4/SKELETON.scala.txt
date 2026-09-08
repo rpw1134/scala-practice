@@ -3,7 +3,7 @@
 // ============================================================================
 //  Order event pipeline — a review of modules 1-5
 //
-//  Run with:  scala-cli run OrderPipeline.scala
+//  Run with:  scala OrderPipeline.scala   (Scala installed via coursier, not scala-cli)
 //  Every task is marked TODO. Replace ??? with real code.
 //  The main method at the bottom checks your work and prints ✓ or ✗.
 //
